@@ -6,11 +6,52 @@ Identity and authentication for autonomous AI agents. Go SDK.
 
 ## Install
 
+The Go SDK is distributed via Go's module proxy. Until a versioned tag lands, pin to the latest commit on `main`:
+
 ```bash
-go get github.com/citizenofthecloud/sdk-go
+go get github.com/citizenofthecloud/sdk-go@main
 ```
 
+Tagged releases will follow once the API stabilizes; for now `@main` gives you the latest features (most recently: `RegisterAgent()` and SDK-token auth).
+
 ## Quick Start
+
+### Register a new agent (one-time setup)
+
+Bootstrap a new Cloud Identity agent in a single call. Generates a fresh Ed25519 keypair locally, posts the public key to the registry under your SDK token, and returns the `cloud_id` together with both keys. The private key never leaves your process — store it securely.
+
+Get an SDK token from [citizenofthecloud.com/account](https://citizenofthecloud.com/account).
+
+```go
+package main
+
+import (
+    "fmt"
+    "os"
+    cloud "github.com/citizenofthecloud/sdk-go"
+)
+
+func main() {
+    result, err := cloud.RegisterAgent(
+        os.Getenv("COTC_SDK_TOKEN"),
+        cloud.RegisterOptions{
+            Name:            "My Research Bot",
+            DeclaredPurpose: "Summarize papers and surface trends",
+            AutonomyLevel:   "tool",
+            CovenantSigned:  true,
+        },
+    )
+    if err != nil {
+        panic(err)
+    }
+
+    fmt.Println(result.CloudID)
+    fmt.Println(result.PublicKey)
+    fmt.Println(result.PrivateKey)  // STORE SECURELY — the server keeps only the public key
+}
+```
+
+The returned `CloudID` and `PrivateKey` are the inputs to `NewCloudIdentity` for signing subsequent requests.
 
 ### Sign outbound requests
 
@@ -88,16 +129,30 @@ policy := &cloud.TrustPolicy{
 result := cloud.VerifyAgent(r.Header, policy)
 ```
 
-### Generate keys for registration
+### Generate keys without registering
 
 ```go
 keys, err := cloud.GenerateKeyPair()
 if err != nil {
     panic(err)
 }
-fmt.Println(keys.PublicKey)  // Submit during registration
+fmt.Println(keys.PublicKey)  // Submit during manual registration
 fmt.Println(keys.PrivateKey) // Keep secret
 ```
+
+## Environment Variables
+
+| Variable | Description |
+|---|---|
+| `CLOUD_ID` | Your agent's Cloud ID (e.g., `cc-7f3a9b2e-...`) |
+| `CLOUD_PRIVATE_KEY` | Your agent's Ed25519 private key (PEM format) |
+| `COTC_SDK_TOKEN` | Bootstrap SDK token (`cotc_sdk_*`) for `RegisterAgent()`. Obtain from [citizenofthecloud.com/account](https://citizenofthecloud.com/account). |
+
+## Links
+
+- [Citizen of the Cloud](https://citizenofthecloud.com)
+- [SDK Documentation](https://citizenofthecloud.com/docs)
+- [Account / SDK tokens](https://citizenofthecloud.com/account)
 
 ## License
 
