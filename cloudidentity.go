@@ -439,6 +439,118 @@ func GetGovernanceFeed(registryURL string) ([]map[string]interface{}, error) {
 	return feed, nil
 }
 
+// ─── Registration (SDK token auth) ───────────────────────────
+
+// RegisterOptions configures a call to RegisterAgent.
+type RegisterOptions struct {
+	Name              string
+	DeclaredPurpose   string
+	AutonomyLevel     string   // 'tool' | 'assistant' | 'agent' | 'self-directing'; default 'tool'
+	Capabilities      []string
+	OperationalDomain string
+	CovenantSigned    bool     // must be true
+	RegistryURL       string   // default DefaultRegistry
+}
+
+// RegisterResult is returned by RegisterAgent. PrivateKey is yours to keep —
+// it is never sent to the registry.
+type RegisterResult struct {
+	CloudID         string                 `json:"cloud_id"`
+	PublicKey       string                 `json:"public_key"`
+	PrivateKey      string                 `json:"private_key"`
+	Name            string                 `json:"name"`
+	DeclaredPurpose string                 `json:"declared_purpose"`
+	AutonomyLevel   string                 `json:"autonomy_level"`
+	Passport        map[string]interface{} `json:"passport,omitempty"`
+}
+
+// RegisterAgent generates a fresh Ed25519 keypair locally, posts the public
+// key plus the agent metadata to the registry under the supplied SDK token,
+// and returns the cloud_id with both keys. The private key never leaves the
+// caller's process.
+//
+// The sdkToken must be a "cotc_sdk_*" token issued from the user's account
+// at citizenofthecloud.com/account.
+func RegisterAgent(sdkToken string, opts RegisterOptions) (*RegisterResult, error) {
+	if !strings.HasPrefix(sdkToken, "cotc_sdk_") {
+		return nil, &CloudSDKError{Message: "sdkToken must be a cotc_sdk_* token. Create one at citizenofthecloud.com/account."}
+	}
+	if opts.AutonomyLevel == "" {
+		opts.AutonomyLevel = "tool"
+	}
+	registry := opts.RegistryURL
+	if registry == "" {
+		registry = DefaultRegistry
+	}
+	covenant := opts.CovenantSigned
+
+	kp, err := GenerateKeyPair()
+	if err != nil {
+		return nil, err
+	}
+
+	payload := map[string]interface{}{
+		"name":             opts.Name,
+		"declared_purpose": opts.DeclaredPurpose,
+		"autonomy_level":   opts.AutonomyLevel,
+		"public_key":       kp.PublicKey,
+		"covenant_signed":  covenant,
+		"capabilities":     opts.Capabilities,
+	}
+	if opts.OperationalDomain != "" {
+		payload["operational_domain"] = opts.OperationalDomain
+	}
+	body, _ := json.Marshal(payload)
+
+	req, err := http.NewRequest(
+		"POST",
+		fmt.Sprintf("%s/api/register", strings.TrimRight(registry, "/")),
+		bytes.NewReader(body),
+	)
+	if err != nil {
+		return nil, &RegistryError{Message: err.Error()}
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+sdkToken)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, &RegistryError{Message: err.Error()}
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		var errBody map[string]interface{}
+		_ = json.Unmarshal(respBody, &errBody)
+		msg, _ := errBody["error"].(string)
+		if msg == "" {
+			msg, _ = errBody["error_code"].(string)
+		}
+		if msg == "" {
+			msg = fmt.Sprintf("HTTP %d", resp.StatusCode)
+		}
+		return nil, &RegistryError{Message: "Registration failed: " + msg}
+	}
+
+	var data map[string]interface{}
+	if err := json.Unmarshal(respBody, &data); err != nil {
+		return nil, &RegistryError{Message: "invalid response: " + err.Error()}
+	}
+	cloudID, _ := data["cloud_id"].(string)
+	passport, _ := data["passport"].(map[string]interface{})
+
+	return &RegisterResult{
+		CloudID:         cloudID,
+		PublicKey:       kp.PublicKey,
+		PrivateKey:      kp.PrivateKey,
+		Name:            opts.Name,
+		DeclaredPurpose: opts.DeclaredPurpose,
+		AutonomyLevel:   opts.AutonomyLevel,
+		Passport:        passport,
+	}, nil
+}
+
 // ─── Trust Policy ────────────────────────────────────────────
 
 // TrustPolicy defines reusable trust rules for verification.
