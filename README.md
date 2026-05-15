@@ -196,6 +196,35 @@ all, _ := cotc.ListDirectory("https://citizenofthecloud.com")
 feed, _ := cotc.GetGovernanceFeed("https://citizenofthecloud.com")
 ```
 
+#### Reading the reputation block (Layer 3)
+
+`LookupAgent()` now surfaces a `Reputation` field alongside the composite `TrustScore`.
+The composite stays at `agent.TrustScore`; the component signals live at `agent.Reputation`
+and let relying parties weight inputs against their own use case. Signals refresh every 5 minutes;
+a freshly registered agent may return `Reputation == nil` — treat nil as "not enough data yet,"
+not as "zero across all signals."
+
+```go
+agent, _ := cotc.LookupAgent("https://citizenofthecloud.com", "cc-abc...")
+
+// Composite — fast threshold check
+if agent.TrustScore >= 0.5 {
+    // ...
+}
+
+// Components — hard-reject on any upheld report, regardless of composite
+if agent.Reputation != nil && agent.Reputation.ReportsUpheld >= 1 {
+    return fmt.Errorf("agent has upheld governance reports")
+}
+
+// Volume + reliability gate
+if agent.Reputation != nil &&
+    agent.Reputation.LifetimeVerifications >= 100 &&
+    agent.Reputation.SuccessRateLifetime >= 0.9 {
+    accept(agent)
+}
+```
+
 ### `net/http` route guard (#16 http-middleware)
 
 ```go

@@ -68,19 +68,38 @@ func (e *RegistryError) Error() string {
 
 // Agent represents the data returned from the registry for a verified agent.
 type Agent struct {
-	CloudID          string   `json:"cloud_id"`
-	Name             string   `json:"name"`
-	DeclaredPurpose  string   `json:"declared_purpose"`
-	AutonomyLevel    string   `json:"autonomy_level"`
-	Capabilities     []string `json:"capabilities"`
-	OperationalDomain string  `json:"operational_domain"`
-	CovenantSigned   bool     `json:"covenant_signed"`
-	Status           string   `json:"status"`
-	TrustScore       *float64 `json:"trust_score"`
-	RegistrationDate string   `json:"registration_date"`
-	LastVerified     *string  `json:"last_verified"`
-	PublicKey        string   `json:"public_key"`
-	OwnerUsername    *string  `json:"owner_username"`
+	CloudID          string      `json:"cloud_id"`
+	Name             string      `json:"name"`
+	DeclaredPurpose  string      `json:"declared_purpose"`
+	AutonomyLevel    string      `json:"autonomy_level"`
+	Capabilities     []string    `json:"capabilities"`
+	OperationalDomain string     `json:"operational_domain"`
+	CovenantSigned   bool        `json:"covenant_signed"`
+	Status           string      `json:"status"`
+	TrustScore       *float64    `json:"trust_score"`
+	RegistrationDate string      `json:"registration_date"`
+	LastVerified     *string     `json:"last_verified"`
+	PublicKey        string      `json:"public_key"`
+	OwnerUsername    *string     `json:"owner_username"`
+	Reputation       *Reputation `json:"reputation"`
+}
+
+// Reputation holds the Layer 3 component signals exposed alongside the
+// composite trust_score. Nil indicates the agent has not yet appeared in a
+// refresh of the materialized view (e.g. registered within the last 5 minutes).
+// Treat nil as "not enough data yet," not as "zero across all signals."
+type Reputation struct {
+	Verifications30d      int64    `json:"verifications_30d"`
+	LifetimeVerifications int64    `json:"lifetime_verifications"`
+	SuccessRate30d        float64  `json:"success_rate_30d"`
+	SuccessRateLifetime   float64  `json:"success_rate_lifetime"`
+	ReportsFiled          int64    `json:"reports_filed"`
+	ReportsUpheld         int64    `json:"reports_upheld"`
+	ReportsDismissed      int64    `json:"reports_dismissed"`
+	AuthenticatedProofs   int64    `json:"authenticated_proofs"`
+	AccountAgeDays        int64    `json:"account_age_days"`
+	FirstSeen             *string  `json:"first_seen"`
+	LastVerifiedAt        *string  `json:"last_verified_at"`
 }
 
 // VerificationResult is returned by VerifyAgent and VerifyRequest.
@@ -1094,8 +1113,43 @@ func parseAgent(data map[string]interface{}) *Agent {
 			}
 		}
 	}
+	if v, ok := data["reputation"].(map[string]interface{}); ok {
+		agent.Reputation = parseReputation(v)
+	}
 
 	return agent
+}
+
+func parseReputation(data map[string]interface{}) *Reputation {
+	r := &Reputation{}
+	asInt := func(v interface{}) int64 {
+		if f, ok := v.(float64); ok {
+			return int64(f)
+		}
+		return 0
+	}
+	asFloat := func(v interface{}) float64 {
+		if f, ok := v.(float64); ok {
+			return f
+		}
+		return 0
+	}
+	r.Verifications30d = asInt(data["verifications_30d"])
+	r.LifetimeVerifications = asInt(data["lifetime_verifications"])
+	r.SuccessRate30d = asFloat(data["success_rate_30d"])
+	r.SuccessRateLifetime = asFloat(data["success_rate_lifetime"])
+	r.ReportsFiled = asInt(data["reports_filed"])
+	r.ReportsUpheld = asInt(data["reports_upheld"])
+	r.ReportsDismissed = asInt(data["reports_dismissed"])
+	r.AuthenticatedProofs = asInt(data["authenticated_proofs"])
+	r.AccountAgeDays = asInt(data["account_age_days"])
+	if v, ok := data["first_seen"].(string); ok {
+		r.FirstSeen = &v
+	}
+	if v, ok := data["last_verified_at"].(string); ok {
+		r.LastVerifiedAt = &v
+	}
+	return r
 }
 
 // ─── Convenience: CloudFetch ─────────────────────────────────
