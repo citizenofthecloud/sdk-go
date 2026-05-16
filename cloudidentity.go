@@ -39,7 +39,11 @@ import (
 
 const (
 	Version        = "0.1.0"
-	DefaultRegistry = "https://citizenofthecloud.com"
+	// Canonical host is www. The bare apex 307-redirects here, and Go's
+	// net/http strips the Authorization header on cross-host redirects —
+	// so callers using the bare apex silently fail RegisterAgent (and any
+	// future auth-bearing endpoint) with a 401.
+	DefaultRegistry = "https://www.citizenofthecloud.com"
 	DefaultMaxAge   = 300 // 5 minutes in seconds
 	cacheTTL        = 5 * time.Minute
 )
